@@ -77,7 +77,7 @@ Resources:
                 parameter = client.get_parameter(Name='/dxc/read/ssm', WithDecryption=True)
                 #print(parameter)
                 print (parameter ['Parameter']['Value'])
-                bucket = 'ssm-bucket'
+                bucket = 'ssm-store'
                 key = 'ssm.txt'
                 id = None
                 s3.put_object(Body=parameter ['Parameter']['Value'], Bucket=bucket, Key=key)

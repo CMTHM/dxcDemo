@@ -1,0 +1,130 @@
+# Copyright 2020 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Thia template is used to read the secrets from secretmanager and store it in s3 
+
+Parameters:
+  lambdaExecutionRoleName:
+    Type: String
+    Description: Lambda service execution role name.
+    Default: "delegate-admin-secret-access-role"
+  s3BucketName:
+    Type: String
+    Description: 'S3 bucket containing log files' 
+    Default: 'ssm-store'
+  AppName:
+    Type: String
+    Description: Application Name
+    Default: exercise-lambda
+    
+Resources:
+  SpaBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerPreferred
+      LifecycleConfiguration:                  
+      BucketName: !Ref s3BucketName
+      BucketEncryption: 
+        ServerSideEncryptionConfiguration: 
+        - ServerSideEncryptionByDefault:
+            SSEAlgorithm: 'AES256'
+      PublicAccessBlockConfiguration:
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+        BlockPublicAcls: true               
+  SPABucketPolicy:
+    Type: 'AWS::S3::BucketPolicy'
+    Properties:
+      Bucket: !Ref SpaBucket
+      PolicyDocument:
+        Statement:
+          - Sid: AllowSSLRequestsOnly
+            Effect: Deny
+            Principal: "*"
+            Action: s3:*
+            Resource:
+              - !Sub 'arn:aws:s3:::${s3BucketName}/*'
+            Condition:
+              Bool:
+                aws:SecureTransport: 'false'
+  SecretStoreLambdaFunction:
+    Type: AWS::Lambda::Function
+    DependsOn:
+      - SpaBucket
+      - LambdaExecutionRole 
+    Properties:
+      Role: !Sub 'arn:aws:iam::${AWS::AccountId}:role/${lambdaExecutionRoleName}'
+      Handler: index.handler
+      Timeout: 10
+      Tags:
+       - Key: "Company"
+         Value: "DXC"
+      Runtime: python3.9
+      MemorySize: 1024
+      FunctionName: !Ref AppName
+      Tracing: Active      
+      Code:
+        ZipFile: !Sub |
+            import boto3
+            import os
+            client = boto3.client('ssm')
+            s3 = boto3.client("s3")
+            def handler(event, context):
+                parameter = client.get_parameter(Name='/dxc/read/ssm', WithDecryption=True)
+                #print(parameter)
+                print (parameter ['Parameter']['Value'])
+                bucket = 'ssm-bucket'
+                key = 'ssm.txt'
+                id = None
+                s3.put_object(Body=parameter ['Parameter']['Value'], Bucket=bucket, Key=key)
+    
+
+
+  
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role    
+    Properties:
+      RoleName: !Ref lambdaExecutionRoleName    
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - lambda.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      Path: "/"
+      Policies:
+      - PolicyName: BDT-Cloudwatch-Policy
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action:
+            - cloudwatch:*
+            Resource: "*"
+      - PolicyName: s3-Access-Policy
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action:
+            - s3:*
+            Resource: "*"
+      - PolicyName: ssm-Access-Policy
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:            
+          - Effect: Allow
+            Action:
+            - ssm:*  #giving full ssm permission we can provide only read access also 
+            Resource: "*"
+            
+            
+
+
